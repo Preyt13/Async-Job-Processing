@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.deps import get_settings
 from app.models import (
@@ -20,6 +21,21 @@ router = APIRouter()
 
 def _store(request: Request):
     return getattr(request.state, "store", None) or request.app.state.store
+
+
+@router.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    """Send browsers to the clickable demo UI."""
+    return RedirectResponse(url="/demo", status_code=307)
+
+
+@router.get("/demo", include_in_schema=False)
+def browser_demo() -> FileResponse:
+    """Clickable browser UI for happy path, DLQ, replay, idempotency."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "static" / "demo.html"
+    return FileResponse(path, media_type="text/html")
 
 
 @router.post("/jobs", response_model=JobSubmitResponse, status_code=202)

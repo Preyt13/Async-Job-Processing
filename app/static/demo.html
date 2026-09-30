@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Async Jobs — Browser Demo</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e7ecf3;
+      --muted: #9aa8bc;
+      --accent: #3d9cf0;
+      --ok: #3ecf8e;
+      --warn: #f0b429;
+      --bad: #f07178;
+      --line: #2a3648;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #1b2a44, var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1.25rem 3rem;
+    }
+    main { max-width: 920px; margin: 0 auto; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
+    p.lead { color: var(--muted); margin: 0 0 1.5rem; line-height: 1.5; }
+    .grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      font-size: 0.95rem;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color .15s, transform .1s;
+    }
+    button:hover { border-color: var(--accent); }
+    button:active { transform: translateY(1px); }
+    button.primary { background: #1e3a5f; border-color: #2f6fad; }
+    button.danger { background: #3a1f28; border-color: #8b3a4a; }
+    button.ok { background: #163528; border-color: #2f8f63; }
+    .panel {
+      margin-top: 1.25rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
+    .meta code { color: var(--accent); }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.85rem;
+      line-height: 1.45;
+      min-height: 8rem;
+    }
+    .status-ok { color: var(--ok); }
+    .status-bad { color: var(--bad); }
+    .status-run { color: var(--warn); }
+    .hint { margin-top: 1rem; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Async Job Processing — Browser Demo</h1>
+    <p class="lead">
+      Click a button to exercise the API. No curl needed.
+      Also available: interactive API docs at <a href="/docs">/docs</a>.
+    </p>
+
+    <div class="grid">
+      <button class="primary" data-action="health">1. Health check</button>
+      <button class="ok" data-action="happy">2. Happy path job</button>
+      <button class="danger" data-action="fail">3. Fail → retries → DLQ</button>
+      <button data-action="dlq">4. List DLQ</button>
+      <button data-action="replay">5. Replay last failed job</button>
+      <button data-action="idempotent">6. Idempotency (same key twice)</button>
+      <button data-action="poll">Poll last job status</button>
+    </div>
+
+    <div class="panel">
+      <div class="meta">
+        Last job id: <code id="jobId">—</code>
+        · Output:
+      </div>
+      <pre id="out">Click a button to begin…</pre>
+    </div>
+
+    <p class="hint">
+      <strong>What to expect</strong><br />
+      2 → status becomes <span class="status-ok">completed</span><br />
+      3 → status <span class="status-bad">failed</span>, then appears in DLQ<br />
+      5 → removes from DLQ and re-runs (will fail again if still should_fail)<br />
+      6 → both submits return the <em>same</em> job id
+    </p>
+  </main>
+
+  <script>
+    const out = document.getElementById("out");
+    const jobIdEl = document.getElementById("jobId");
+    let lastJobId = null;
+    let lastFailedId = null;
+
+    function show(data, label) {
+      const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      out.textContent = (label ? label + "\n\n" : "") + text;
+    }
+
+    function setJob(id, failed = false) {
+      lastJobId = id;
+      if (failed) lastFailedId = id;
+      jobIdEl.textContent = id || "—";
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options,
+      });
+      const text = await res.text();
+      let body;
+      try { body = JSON.parse(text); } catch { body = text; }
+      if (!res.ok) {
+        throw new Error(`${res.status} ${res.statusText}\n` + (typeof body === "string" ? body : JSON.stringify(body, null, 2)));
+      }
+      return body;
+    }
+
+    async function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+    async function pollUntilDone(id, tries = 20) {
+      let last;
+      for (let i = 0; i < tries; i++) {
+        last = await api(`/jobs/${id}`);
+        show(last, `Poll ${i + 1}/${tries}`);
+        if (last.status === "completed" || last.status === "failed") return last;
+        await sleep(700);
+      }
+      return last;
+    }
+
+    const actions = {
+      async health() {
+        show(await api("/health"), "GET /health");
+      },
+
+      async happy() {
+        const created = await api("/jobs", {
+          method: "POST",
+          body: JSON.stringify({ data: { task: "hello-browser" }, work_seconds: 1 }),
+        });
+        setJob(created.id);
+        show(created, "POST /jobs (happy path) — polling…");
+        const final = await pollUntilDone(created.id);
+        show(final, "Final status");
+      },
+
+      async fail() {
+        const created = await api("/jobs", {
+          method: "POST",
+          body: JSON.stringify({
+            data: { task: "will-fail" },
+            should_fail: true,
+            work_seconds: 0,
+          }),
+        });
+        setJob(created.id, true);
+        show(created, "POST /jobs (should_fail=true) — waiting for retries…");
+        const final = await pollUntilDone(created.id, 30);
+        const dlq = await api("/dlq");
+        show({ job: final, dlq }, "Failed job + DLQ");
+      },
+
+      async dlq() {
+        show(await api("/dlq"), "GET /dlq");
+      },
+
+      async replay() {
+        const id = lastFailedId || lastJobId;
+        if (!id) {
+          show("No job id yet. Run step 3 first.");
+          return;
+        }
+        const replayed = await api(`/jobs/${id}/replay`, { method: "POST" });
+        setJob(replayed.id, true);
+        show(replayed, "POST /jobs/{id}/replay — polling…");
+        const final = await pollUntilDone(id, 30);
+        const dlq = await api("/dlq");
+        show({ job: final, dlq }, "After replay");
+      },
+
+      async idempotent() {
+        const key = "browser-demo-" + Date.now();
+        const body = JSON.stringify({ data: { task: "once" }, work_seconds: 1 });
+        const a = await api("/jobs", {
+          method: "POST",
+          headers: { "Idempotency-Key": key },
+          body,
+        });
+        const b = await api("/jobs", {
+          method: "POST",
+          headers: { "Idempotency-Key": key },
+          body,
+        });
+        setJob(a.id);
+        show(
+          { first: a, second: b, sameId: a.id === b.id },
+          "Idempotency-Key test (sameId should be true)"
+        );
+      },
+
+      async poll() {
+        if (!lastJobId) {
+          show("No job id yet. Run a submit step first.");
+          return;
+        }
+        show(await api(`/jobs/${lastJobId}`), `GET /jobs/${lastJobId}`);
+      },
+    };
+
+    document.querySelectorAll("button[data-action]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        out.textContent = "Working…";
+        try {
+          await actions[btn.dataset.action]();
+        } catch (err) {
+          show(String(err), "Error");
+        }
+      });
+    });
+  </script>
+</body>
+</html>
