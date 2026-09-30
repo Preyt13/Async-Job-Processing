@@ -395,7 +395,7 @@
       submitJob({ data: { task: "will-fail" }, should_fail: true, work_seconds: 0 }, "POST /jobs (fail)");
 
     document.getElementById("btnSlow").onclick = () =>
-      submitJob({ data: { task: "slow-job" }, work_seconds: 5 }, "POST /jobs (slow)");
+      submitJob({ data: { task: "slow-job" }, work_seconds: 20 }, "POST /jobs (slow)");
 
     document.getElementById("btnIdem").onclick = () => withBusy(async () => {
       const key = "browser-demo-" + Date.now();
