@@ -57,6 +57,18 @@ class ReplayResponse(BaseModel):
     replayed: bool = True
 
 
+class MetricsResponse(BaseModel):
+    total_jobs: int
+    queued: int
+    running: int
+    completed: int
+    failed: int
+    stuck_running: int
+    dlq_depth: int
+    celery_queue_depth: int
+    stuck_threshold_seconds: int
+
+
 class Job:
     """Job record persisted as JSON in Redis."""
 

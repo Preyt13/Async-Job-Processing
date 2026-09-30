@@ -3,123 +3,287 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Async Jobs — Browser Demo</title>
+  <title>Async Jobs — Live Dashboard</title>
   <style>
     :root {
-      --bg: #0f1419;
-      --panel: #1a2332;
-      --text: #e7ecf3;
-      --muted: #9aa8bc;
-      --accent: #3d9cf0;
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --panel-2: #172235;
+      --text: #e8eef8;
+      --muted: #8fa0b8;
+      --accent: #4aa3ff;
       --ok: #3ecf8e;
       --warn: #f0b429;
       --bad: #f07178;
-      --line: #2a3648;
+      --queued: #7aa2f7;
+      --running: #f0b429;
+      --line: #243247;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", system-ui, sans-serif;
-      background: radial-gradient(1200px 600px at 10% -10%, #1b2a44, var(--bg));
+      background:
+        radial-gradient(900px 480px at 0% 0%, #1a2d4d 0%, transparent 55%),
+        radial-gradient(700px 400px at 100% 10%, #1a3a32 0%, transparent 50%),
+        var(--bg);
       color: var(--text);
       min-height: 100vh;
-      padding: 2rem 1.25rem 3rem;
+      padding: 1.25rem;
     }
-    main { max-width: 920px; margin: 0 auto; }
-    h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
-    p.lead { color: var(--muted); margin: 0 0 1.5rem; line-height: 1.5; }
-    .grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-    button {
+    main { max-width: 1100px; margin: 0 auto; }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    h1 { font-size: 1.45rem; margin: 0 0 0.25rem; }
+    .lead { color: var(--muted); margin: 0; font-size: 0.92rem; line-height: 1.45; }
+    .lead a { color: var(--accent); }
+    .live {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.6);
+      animation: pulse 1.6s infinite;
+    }
+    .dot.off { background: var(--muted); animation: none; box-shadow: none; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.55); }
+      70% { box-shadow: 0 0 0 8px rgba(62, 207, 142, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0); }
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.85rem 0.9rem;
+    }
+    .metric .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .metric .value { font-size: 1.55rem; font-weight: 650; margin-top: 0.2rem; font-variant-numeric: tabular-nums; }
+    .metric.ok .value { color: var(--ok); }
+    .metric.bad .value { color: var(--bad); }
+    .metric.warn .value { color: var(--warn); }
+    .metric.queued .value { color: var(--queued); }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    button, select {
       appearance: none;
       border: 1px solid var(--line);
       background: var(--panel);
       color: var(--text);
-      border-radius: 10px;
-      padding: 0.85rem 1rem;
-      font-size: 0.95rem;
+      border-radius: 9px;
+      padding: 0.6rem 0.85rem;
+      font-size: 0.88rem;
       cursor: pointer;
-      text-align: left;
-      transition: border-color .15s, transform .1s;
     }
     button:hover { border-color: var(--accent); }
-    button:active { transform: translateY(1px); }
-    button.primary { background: #1e3a5f; border-color: #2f6fad; }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    button.primary { background: #1a3558; border-color: #2f6fad; }
     button.danger { background: #3a1f28; border-color: #8b3a4a; }
     button.ok { background: #163528; border-color: #2f8f63; }
+    button.ghost { background: transparent; }
+    select { min-width: 140px; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 0.85rem;
+    }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+    }
     .panel {
-      margin-top: 1.25rem;
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
-      padding: 1rem;
+      overflow: hidden;
     }
-    .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
-    .meta code { color: var(--accent); }
+    .panel-h {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.75rem 0.9rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+      font-size: 0.9rem;
+    }
+    .panel-h span { color: var(--muted); font-size: 0.8rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+    th { color: var(--muted); font-weight: 550; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(74, 163, 255, 0.06); }
+    tr.selected td { background: rgba(74, 163, 255, 0.12); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge.queued { background: rgba(122, 162, 247, 0.18); color: var(--queued); }
+    .badge.running { background: rgba(240, 180, 41, 0.18); color: var(--running); }
+    .badge.completed { background: rgba(62, 207, 142, 0.18); color: var(--ok); }
+    .badge.failed { background: rgba(240, 113, 120, 0.18); color: var(--bad); }
+    .row-actions { display: flex; gap: 0.35rem; }
+    .row-actions button { padding: 0.3rem 0.5rem; font-size: 0.75rem; }
+    .empty { color: var(--muted); padding: 1.25rem; text-align: center; font-size: 0.9rem; }
+
     pre {
       margin: 0;
+      padding: 0.85rem;
       white-space: pre-wrap;
       word-break: break-word;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       line-height: 1.45;
-      min-height: 8rem;
+      min-height: 12rem;
+      max-height: 28rem;
+      overflow: auto;
     }
-    .status-ok { color: var(--ok); }
-    .status-bad { color: var(--bad); }
-    .status-run { color: var(--warn); }
-    .hint { margin-top: 1rem; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
-    a { color: var(--accent); }
+    .toast {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      background: #1e2d45;
+      border: 1px solid var(--line);
+      color: var(--text);
+      padding: 0.65rem 0.9rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+      max-width: 320px;
+      z-index: 20;
+    }
+    .toast.show { opacity: 1; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Async Job Processing — Browser Demo</h1>
-    <p class="lead">
-      Click a button to exercise the API. No curl needed.
-      Also available: interactive API docs at <a href="/docs">/docs</a>.
-    </p>
-
-    <div class="grid">
-      <button class="primary" data-action="health">1. Health check</button>
-      <button class="ok" data-action="happy">2. Happy path job</button>
-      <button class="danger" data-action="fail">3. Fail → retries → DLQ</button>
-      <button data-action="dlq">4. List DLQ</button>
-      <button data-action="replay">5. Replay last failed job</button>
-      <button data-action="idempotent">6. Idempotency (same key twice)</button>
-      <button data-action="poll">Poll last job status</button>
-    </div>
-
-    <div class="panel">
-      <div class="meta">
-        Last job id: <code id="jobId">—</code>
-        · Output:
+    <header>
+      <div>
+        <h1>Async Jobs — Live Dashboard</h1>
+        <p class="lead">
+          Submit jobs, watch the queue, and inspect metrics in real time.
+          API docs: <a href="/docs">/docs</a>
+        </p>
       </div>
-      <pre id="out">Click a button to begin…</pre>
+      <div class="live"><span class="dot" id="liveDot"></span><span id="liveLabel">Auto-refresh on</span></div>
+    </header>
+
+    <section class="metrics" id="metrics">
+      <div class="metric"><div class="label">Total</div><div class="value" data-k="total_jobs">—</div></div>
+      <div class="metric queued"><div class="label">Queued</div><div class="value" data-k="queued">—</div></div>
+      <div class="metric warn"><div class="label">Running</div><div class="value" data-k="running">—</div></div>
+      <div class="metric ok"><div class="label">Passed</div><div class="value" data-k="completed">—</div></div>
+      <div class="metric bad"><div class="label">Failed</div><div class="value" data-k="failed">—</div></div>
+      <div class="metric warn"><div class="label">Stuck</div><div class="value" data-k="stuck_running">—</div></div>
+      <div class="metric bad"><div class="label">DLQ</div><div class="value" data-k="dlq_depth">—</div></div>
+      <div class="metric queued"><div class="label">Celery Q</div><div class="value" data-k="celery_queue_depth">—</div></div>
+    </section>
+
+    <div class="toolbar">
+      <button class="ok" id="btnHappy">Submit success job</button>
+      <button class="danger" id="btnFail">Submit failing job</button>
+      <button class="primary" id="btnSlow">Submit slow job (5s)</button>
+      <button id="btnIdem">Idempotency test</button>
+      <button id="btnReap">Reap stuck</button>
+      <button id="btnReplay" disabled>Replay selected</button>
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="queued">queued</option>
+        <option value="running">running</option>
+        <option value="completed">completed</option>
+        <option value="failed">failed</option>
+      </select>
+      <button class="ghost" id="btnRefresh">Refresh now</button>
+      <button class="ghost" id="btnToggleLive">Pause live</button>
     </div>
 
-    <p class="hint">
-      <strong>What to expect</strong><br />
-      2 → status becomes <span class="status-ok">completed</span><br />
-      3 → status <span class="status-bad">failed</span>, then appears in DLQ<br />
-      5 → removes from DLQ and re-runs (will fail again if still should_fail)<br />
-      6 → both submits return the <em>same</em> job id
-    </p>
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-h">
+          <strong>Job queue</strong>
+          <span id="queueMeta">—</span>
+        </div>
+        <div id="queueBody"><div class="empty">Loading…</div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-h">
+          <strong>Detail / activity</strong>
+          <span id="detailMeta">select a row</span>
+        </div>
+        <pre id="detail">Metrics and job details appear here.</pre>
+      </section>
+    </div>
   </main>
 
-  <script>
-    const out = document.getElementById("out");
-    const jobIdEl = document.getElementById("jobId");
-    let lastJobId = null;
-    let lastFailedId = null;
+  <div class="toast" id="toast"></div>
 
-    function show(data, label) {
-      const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-      out.textContent = (label ? label + "\n\n" : "") + text;
+  <script>
+    const detail = document.getElementById("detail");
+    const detailMeta = document.getElementById("detailMeta");
+    const queueBody = document.getElementById("queueBody");
+    const queueMeta = document.getElementById("queueMeta");
+    const statusFilter = document.getElementById("statusFilter");
+    const btnReplay = document.getElementById("btnReplay");
+    const liveDot = document.getElementById("liveDot");
+    const liveLabel = document.getElementById("liveLabel");
+    const toastEl = document.getElementById("toast");
+
+    let selectedId = null;
+    let live = true;
+    let busy = false;
+    let timer = null;
+    let lastMetrics = null;
+
+    function toast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => toastEl.classList.remove("show"), 2200);
     }
 
-    function setJob(id, failed = false) {
-      lastJobId = id;
-      if (failed) lastFailedId = id;
-      jobIdEl.textContent = id || "—";
+    function showDetail(data, label) {
+      detailMeta.textContent = label || "detail";
+      detail.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
     }
 
     async function api(path, options = {}) {
@@ -136,108 +300,166 @@
       return body;
     }
 
-    async function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-    async function pollUntilDone(id, tries = 20) {
-      let last;
-      for (let i = 0; i < tries; i++) {
-        last = await api(`/jobs/${id}`);
-        show(last, `Poll ${i + 1}/${tries}`);
-        if (last.status === "completed" || last.status === "failed") return last;
-        await sleep(700);
-      }
-      return last;
+    function shortId(id) {
+      return id ? id.slice(0, 8) + "…" : "—";
     }
 
-    const actions = {
-      async health() {
-        show(await api("/health"), "GET /health");
-      },
+    function setSelected(id) {
+      selectedId = id;
+      btnReplay.disabled = !id;
+      queueBody.querySelectorAll("tr[data-id]").forEach((tr) => {
+        tr.classList.toggle("selected", tr.dataset.id === id);
+      });
+    }
 
-      async happy() {
-        const created = await api("/jobs", {
-          method: "POST",
-          body: JSON.stringify({ data: { task: "hello-browser" }, work_seconds: 1 }),
-        });
-        setJob(created.id);
-        show(created, "POST /jobs (happy path) — polling…");
-        const final = await pollUntilDone(created.id);
-        show(final, "Final status");
-      },
+    function renderMetrics(m) {
+      lastMetrics = m;
+      document.querySelectorAll("#metrics [data-k]").forEach((el) => {
+        el.textContent = m[el.dataset.k] ?? "—";
+      });
+    }
 
-      async fail() {
-        const created = await api("/jobs", {
-          method: "POST",
-          body: JSON.stringify({
-            data: { task: "will-fail" },
-            should_fail: true,
-            work_seconds: 0,
-          }),
-        });
-        setJob(created.id, true);
-        show(created, "POST /jobs (should_fail=true) — waiting for retries…");
-        const final = await pollUntilDone(created.id, 30);
-        const dlq = await api("/dlq");
-        show({ job: final, dlq }, "Failed job + DLQ");
-      },
+    function renderJobs(jobs) {
+      queueMeta.textContent = `${jobs.length} shown · click a row for detail`;
+      if (!jobs.length) {
+        queueBody.innerHTML = '<div class="empty">No jobs yet — submit one above.</div>';
+        return;
+      }
+      const rows = jobs.map((j) => {
+        const canReplay = j.status === "failed";
+        return `<tr data-id="${j.id}">
+          <td class="mono" title="${j.id}">${shortId(j.id)}</td>
+          <td><span class="badge ${j.status}">${j.status}</span></td>
+          <td>${j.attempts}</td>
+          <td class="mono">${(j.payload && j.payload.task) || "—"}</td>
+          <td class="row-actions">
+            <button data-view="${j.id}">View</button>
+            ${canReplay ? `<button data-replay="${j.id}">Replay</button>` : ""}
+          </td>
+        </tr>`;
+      }).join("");
+      queueBody.innerHTML = `<table>
+        <thead><tr><th>ID</th><th>Status</th><th>Tries</th><th>Task</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+      if (selectedId) setSelected(selectedId);
+    }
 
-      async dlq() {
-        show(await api("/dlq"), "GET /dlq");
-      },
+    async function refresh() {
+      try {
+        const status = statusFilter.value;
+        const q = status ? `?status=${encodeURIComponent(status)}&limit=100` : "?limit=100";
+        const [metrics, jobs] = await Promise.all([
+          api("/metrics"),
+          api("/jobs" + q),
+        ]);
+        renderMetrics(metrics);
+        renderJobs(jobs);
+        liveDot.classList.toggle("off", !live);
+        liveLabel.textContent = live ? "Auto-refresh on (1.5s)" : "Paused";
+      } catch (err) {
+        showDetail(String(err), "Refresh error");
+      }
+    }
 
-      async replay() {
-        const id = lastFailedId || lastJobId;
-        if (!id) {
-          show("No job id yet. Run step 3 first.");
-          return;
-        }
-        const replayed = await api(`/jobs/${id}/replay`, { method: "POST" });
-        setJob(replayed.id, true);
-        show(replayed, "POST /jobs/{id}/replay — polling…");
-        const final = await pollUntilDone(id, 30);
-        const dlq = await api("/dlq");
-        show({ job: final, dlq }, "After replay");
-      },
+    async function withBusy(fn, label) {
+      if (busy) return;
+      busy = true;
+      document.querySelectorAll(".toolbar button").forEach((b) => { if (b.id !== "btnToggleLive") b.disabled = true; });
+      try {
+        await fn();
+        toast(label || "Done");
+      } catch (err) {
+        showDetail(String(err), "Error");
+        toast("Request failed");
+      } finally {
+        busy = false;
+        document.querySelectorAll(".toolbar button").forEach((b) => { b.disabled = false; });
+        btnReplay.disabled = !selectedId;
+        await refresh();
+      }
+    }
 
-      async idempotent() {
-        const key = "browser-demo-" + Date.now();
-        const body = JSON.stringify({ data: { task: "once" }, work_seconds: 1 });
-        const a = await api("/jobs", {
-          method: "POST",
-          headers: { "Idempotency-Key": key },
-          body,
-        });
-        const b = await api("/jobs", {
-          method: "POST",
-          headers: { "Idempotency-Key": key },
-          body,
-        });
-        setJob(a.id);
-        show(
-          { first: a, second: b, sameId: a.id === b.id },
-          "Idempotency-Key test (sameId should be true)"
-        );
-      },
+    async function submitJob(body, label) {
+      await withBusy(async () => {
+        const created = await api("/jobs", { method: "POST", body: JSON.stringify(body) });
+        setSelected(created.id);
+        showDetail(created, label);
+      }, "Job submitted");
+    }
 
-      async poll() {
-        if (!lastJobId) {
-          show("No job id yet. Run a submit step first.");
-          return;
-        }
-        show(await api(`/jobs/${lastJobId}`), `GET /jobs/${lastJobId}`);
-      },
+    document.getElementById("btnHappy").onclick = () =>
+      submitJob({ data: { task: "hello-browser" }, work_seconds: 1 }, "POST /jobs (success)");
+
+    document.getElementById("btnFail").onclick = () =>
+      submitJob({ data: { task: "will-fail" }, should_fail: true, work_seconds: 0 }, "POST /jobs (fail)");
+
+    document.getElementById("btnSlow").onclick = () =>
+      submitJob({ data: { task: "slow-job" }, work_seconds: 5 }, "POST /jobs (slow)");
+
+    document.getElementById("btnIdem").onclick = () => withBusy(async () => {
+      const key = "browser-demo-" + Date.now();
+      const body = JSON.stringify({ data: { task: "once" }, work_seconds: 1 });
+      const a = await api("/jobs", { method: "POST", headers: { "Idempotency-Key": key }, body });
+      const b = await api("/jobs", { method: "POST", headers: { "Idempotency-Key": key }, body });
+      setSelected(a.id);
+      showDetail({ first: a, second: b, sameId: a.id === b.id }, "Idempotency-Key");
+    }, "Idempotency checked");
+
+    document.getElementById("btnReap").onclick = () => withBusy(async () => {
+      const result = await api("/admin/reap-stuck", { method: "POST" });
+      showDetail(result, "POST /admin/reap-stuck");
+    }, "Reaper ran");
+
+    btnReplay.onclick = () => {
+      if (!selectedId) return;
+      withBusy(async () => {
+        const result = await api(`/jobs/${selectedId}/replay`, { method: "POST" });
+        showDetail(result, "POST /jobs/{id}/replay");
+      }, "Replay enqueued");
     };
 
-    document.querySelectorAll("button[data-action]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        out.textContent = "Working…";
+    document.getElementById("btnRefresh").onclick = () => refresh();
+
+    document.getElementById("btnToggleLive").onclick = () => {
+      live = !live;
+      document.getElementById("btnToggleLive").textContent = live ? "Pause live" : "Resume live";
+      liveDot.classList.toggle("off", !live);
+      liveLabel.textContent = live ? "Auto-refresh on (1.5s)" : "Paused";
+      schedule();
+    };
+
+    statusFilter.onchange = () => refresh();
+
+    queueBody.addEventListener("click", async (e) => {
+      const view = e.target.closest("[data-view]");
+      const replay = e.target.closest("[data-replay]");
+      const row = e.target.closest("tr[data-id]");
+      if (replay) {
+        setSelected(replay.dataset.replay);
+        btnReplay.click();
+        return;
+      }
+      if (view || row) {
+        const id = (view && view.dataset.view) || (row && row.dataset.id);
+        setSelected(id);
         try {
-          await actions[btn.dataset.action]();
+          const job = await api(`/jobs/${id}`);
+          showDetail({ job, metrics: lastMetrics }, `GET /jobs/${id}`);
         } catch (err) {
-          show(String(err), "Error");
+          showDetail(String(err), "Error");
         }
-      });
+      }
     });
+
+    function schedule() {
+      clearInterval(timer);
+      if (!live) return;
+      timer = setInterval(() => { if (!busy) refresh(); }, 1500);
+    }
+
+    refresh();
+    schedule();
   </script>
 </body>
 </html>

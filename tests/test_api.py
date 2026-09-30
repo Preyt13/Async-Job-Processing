@@ -92,3 +92,49 @@ def test_different_idempotency_keys_create_distinct_jobs(client: TestClient):
     b = client.post("/jobs", json=payload, headers={"Idempotency-Key": "key-b"})
 
     assert a.json()["id"] != b.json()["id"]
+
+
+def test_list_jobs_and_filter(client: TestClient):
+    client.post("/jobs", json={"data": {"task": "ok"}, "work_seconds": 0})
+    client.post(
+        "/jobs",
+        json={"data": {"task": "bad"}, "should_fail": True, "work_seconds": 0},
+    )
+
+    all_jobs = client.get("/jobs")
+    assert all_jobs.status_code == 200
+    body = all_jobs.json()
+    assert len(body) >= 2
+    assert all(set(j.keys()) >= {"id", "status", "attempts"} for j in body)
+
+    completed = client.get("/jobs", params={"status": "completed"})
+    assert completed.status_code == 200
+    assert all(j["status"] == "completed" for j in completed.json())
+
+    failed = client.get("/jobs", params={"status": "failed"})
+    assert failed.status_code == 200
+    assert all(j["status"] == "failed" for j in failed.json())
+    assert len(failed.json()) >= 1
+
+
+def test_metrics_counts(client: TestClient, monkeypatch, settings: Settings):
+    monkeypatch.setattr(
+        "app.worker.tasks.compute_backoff_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    client.post("/jobs", json={"data": {"task": "ok"}, "work_seconds": 0})
+    client.post(
+        "/jobs",
+        json={"data": {"task": "bad"}, "should_fail": True, "work_seconds": 0},
+    )
+
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    m = response.json()
+    assert m["total_jobs"] >= 2
+    assert m["completed"] >= 1
+    assert m["failed"] >= 1
+    assert m["dlq_depth"] >= 1
+    assert "stuck_running" in m
+    assert "celery_queue_depth" in m
+    assert m["stuck_threshold_seconds"] == settings.stuck_running_seconds

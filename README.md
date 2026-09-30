@@ -9,6 +9,9 @@ over Redis, and exposes job status/results for polling.
 - **Celery workers** — separate processes; scale with concurrency / replicas
 - **Redis** — job state + idempotency keys (DB 0); Celery broker (DB 1)
 - **Status API** — `GET /jobs/{id}` → `queued` / `running` / `completed` / `failed`
+- **Queue list** — `GET /jobs?status=&limit=` lists jobs newest-first
+- **Metrics** — `GET /metrics` → counts for queued/running/completed/failed, stuck, DLQ, Celery depth
+- **Live demo** — `/demo` dashboard with auto-refresh queue + metrics
 - **Retries** — Celery `self.retry` with exponential backoff + jitter
 - **DLQ + replay** — permanent failures land in a dead-letter list; `POST /jobs/{id}/replay`
 - **Stuck-job reaper** — Celery Beat fails jobs stuck in `running` and sends them to the DLQ
@@ -136,11 +139,20 @@ curl -s -X POST http://localhost:8000/jobs \
 # status
 curl -s http://localhost:8000/jobs/<id>
 
+# list queue (optional ?status=failed&limit=50)
+curl -s 'http://localhost:8000/jobs?limit=100'
+
+# metrics (passed / failed / stuck / DLQ / celery depth)
+curl -s http://localhost:8000/metrics
+
 # dead-letter queue
 curl -s http://localhost:8000/dlq
 
 # replay a failed job (clears DLQ entry, re-enqueues)
 curl -s -X POST http://localhost:8000/jobs/<id>/replay
+
+# browser dashboard
+open http://localhost:8000/demo
 
 # health
 curl -s http://localhost:8000/health
@@ -166,6 +178,8 @@ flowchart TD
 
     subgraph API["FastAPI process"]
         POST["POST /jobs"]
+        LIST["GET /jobs"]
+        METRICS["GET /metrics"]
         GET["GET /jobs/{id}"]
         Idem{"Idempotency-Key\npresent & known?"}
         Create["Create Job\nstatus = queued"]

@@ -203,6 +203,46 @@ class JobStore:
 
     # --- Reaper / TTL maintenance --------------------------------------------
 
+    def list_jobs(
+        self,
+        *,
+        status: JobStatus | None = None,
+        limit: int = 100,
+    ) -> list[Job]:
+        jobs = list(self.values())
+        if status is not None:
+            jobs = [j for j in jobs if j.status == status]
+        jobs.sort(key=lambda j: j.updated_at, reverse=True)
+        return jobs[: max(0, limit)]
+
+    def metrics(self) -> dict:
+        settings = self._config
+        counts = {
+            "queued": 0,
+            "running": 0,
+            "completed": 0,
+            "failed": 0,
+        }
+        for job in self.values():
+            counts[job.status.value] = counts.get(job.status.value, 0) + 1
+
+        stuck = self.find_stuck_running(settings.stuck_running_seconds)
+        dlq_depth = int(self._redis.llen(self._config.dlq_key()) or 0)
+        # Celery Redis broker stores the queue as a list named after CELERY_QUEUE.
+        celery_depth = int(self._redis.llen(settings.celery_queue) or 0)
+
+        return {
+            "total_jobs": sum(counts.values()),
+            "queued": counts["queued"],
+            "running": counts["running"],
+            "completed": counts["completed"],
+            "failed": counts["failed"],
+            "stuck_running": len(stuck),
+            "dlq_depth": dlq_depth,
+            "celery_queue_depth": celery_depth,
+            "stuck_threshold_seconds": settings.stuck_running_seconds,
+        }
+
     def find_stuck_running(self, older_than_seconds: int) -> list[Job]:
         now = datetime.now(timezone.utc)
         stuck: list[Job] = []

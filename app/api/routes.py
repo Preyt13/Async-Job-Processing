@@ -10,8 +10,10 @@ from app.models import (
     DLQEntry,
     Job,
     JobResponse,
+    JobStatus,
     JobSubmitRequest,
     JobSubmitResponse,
+    MetricsResponse,
     ReplayResponse,
 )
 from app.worker.tasks import enqueue_job, purge_expired_jobs, reap_stuck_jobs, replay_job
@@ -71,6 +73,24 @@ def submit_job(
     store.create(job)
     enqueue_job(job.id)
     return JobSubmitResponse(id=job.id, status=job.status)
+
+
+@router.get("/jobs", response_model=list[JobResponse])
+def list_jobs(
+    request: Request,
+    status: JobStatus | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> list[JobResponse]:
+    """List jobs newest-first. Optional status filter: queued|running|completed|failed."""
+    store = _store(request)
+    return [j.to_response() for j in store.list_jobs(status=status, limit=limit)]
+
+
+@router.get("/metrics", response_model=MetricsResponse)
+def metrics(request: Request) -> MetricsResponse:
+    """Queue / status counters including stuck-running and DLQ depth."""
+    store = _store(request)
+    return MetricsResponse(**store.metrics())
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
