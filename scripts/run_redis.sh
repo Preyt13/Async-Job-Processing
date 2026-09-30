@@ -19,6 +19,7 @@ if "$CLI" ping >/dev/null 2>&1; then
   exit 0
 fi
 
-"$BIN" --daemonize yes --port 6379 --dir "$DATA" --appendonly yes --logfile "$DATA/redis.log"
+"$BIN" --daemonize yes --port 6379 --dir "$DATA" --appendonly yes \
+  --logfile "$DATA/redis.log" --pidfile "$DATA/redis.pid"
 "$CLI" ping
 echo "Redis started (data: $DATA)"

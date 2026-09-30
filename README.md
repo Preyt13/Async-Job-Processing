@@ -16,53 +16,61 @@ over Redis, and exposes job status/results for polling.
 - **Crash safety** — `acks_late` + `reject_on_worker_lost`
 - **Idempotent submit** — optional `Idempotency-Key` header
 
-## Deploy (DigitalOcean App Platform)
+## Evaluation quick paths
 
-Infrastructure lives under [`.do/app.yaml`](.do/app.yaml) and
-[`infra/digitalocean/README.md`](infra/digitalocean/README.md).
+### 1) Local (inside this dockerized env) — one command
 
-```text
-api + celery-worker + celery-beat  →  managed Valkey (Redis-compatible)
+```bash
+./scripts/dev_up.sh      # Redis + API + worker + beat
+# ./scripts/dev_status.sh
+# ./scripts/dev_down.sh
 ```
 
-### CI/CD (GitHub Actions)
+Then: `curl -s http://127.0.0.1:8000/health`
 
-Workflow: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
+### 2) Deploy to DigitalOcean Droplet (recommended)
+
+App Platform’s multi-component UI is awkward for this app. Use **one Droplet + Docker Compose**:
+
+Full guide: [`infra/droplet/README.md`](infra/droplet/README.md)
+
+Short version:
+1. Create → **Droplets** → Ubuntu 24.04 → add your SSH key → note the IP  
+2. SSH in and bootstrap:
+
+```bash
+ssh root@YOUR_DROPLET_IP
+git clone -b Main https://github.com/Preyt13/Async-Job-Processing.git /opt/async-jobs
+cd /opt/async-jobs && bash infra/droplet/bootstrap.sh
+```
+
+3. Test: `curl http://YOUR_DROPLET_IP:8000/health`
+
+### 3) CI/CD (GitHub Actions)
+
+[`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
 
 | Event | What runs |
 | --- | --- |
-| Pull request → `Main` / `main` | `pytest` only |
-| Push → `Main` / `main` | `pytest`, then deploy to App Platform if tests pass |
+| PR → `Main`/`main` | `pytest` |
+| Push → `Main`/`main` | `pytest` → SSH deploy to Droplet if green |
 
-**Repo secrets** (GitHub → Settings → Secrets and variables → Actions):
+**GitHub secrets:**
 
-| Secret | How to get it |
+| Secret | Value |
 | --- | --- |
-| `DIGITALOCEAN_ACCESS_TOKEN` | DO control panel → API → Generate New Token |
-| `DIGITALOCEAN_APP_ID` | `doctl apps list` after first create |
+| `DROPLET_HOST` | Droplet IP |
+| `DROPLET_USER` | `root` |
+| `DROPLET_SSH_KEY` | Private key that can SSH to the Droplet |
 
-One-time app create (local, before Actions can deploy):
+(App Platform spec remains in [`.do/app.yaml`](.do/app.yaml) if you need it later.)
 
-```bash
-# 1) github.repo is already Preyt13/Async-Job-Processing in .do/app.yaml
-# 2) Create the app once
-doctl apps create --spec .do/app.yaml
-# 3) Copy the app id into GitHub secret DIGITALOCEAN_APP_ID
-```
-
-## Quick start (Docker)
+## Quick start (Docker Compose on a host that has Docker)
 
 ```bash
-cp .env.example .env.docker   # if needed — repo includes .env.docker
-docker compose up --build
+cp .env.example .env
+docker compose --env-file .env.docker up -d --build
 ```
-
-Compose loads **`.env.docker`** into api/worker/beat. Host port mapping reads
-`REDIS_PUBLISH_PORT` / `API_PUBLISH_PORT` from the project **`.env`** file
-(Compose variable substitution).
-
-- API: http://localhost:${API_PUBLISH_PORT}/docs  
-- Redis + Celery worker + Beat start automatically
 
 ## Local setup (without Docker for the app)
 
