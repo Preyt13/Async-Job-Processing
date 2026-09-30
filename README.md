@@ -274,6 +274,65 @@ sequenceDiagram
     API-->>Client: { status, result, ... }
 ```
 
+## Retry backoff formula
+
+On each failed attempt (before retries are exhausted), Celery waits `countdown`
+seconds from `compute_backoff_seconds` in `app/worker/processor.py`:
+
+```text
+exp    = BASE_BACKOFF_SECONDS * 2^(attempt - 1)
+jitter = exp * RETRY_JITTER_RATIO * Uniform(-1, 1)
+delay  = max(0, exp + jitter)
+# equivalently: delay ≈ exp * (1 ± RETRY_JITTER_RATIO)
+```
+
+| Symbol | Source | Meaning |
+| --- | --- | --- |
+| `attempt` | `self.request.retries + 1` | 1 on first retry, 2 on second, … |
+| `BASE_BACKOFF_SECONDS` | `.env` | Exponential base (example: `0.2`) |
+| `RETRY_JITTER_RATIO` | `.env` | Symmetric jitter fraction (example: `0.25`) |
+| `MAX_RETRIES` | `.env` | After this many retries, job → `failed` + DLQ |
+
+With the example env values, **expected** delays before jitter are
+**0.2s → 0.4s → 0.8s**, each randomized by ±25%. Applied via
+`self.retry(exc=…, countdown=delay, max_retries=…)`.
+
+## Concurrency-safe access
+
+Multiple Celery workers (and the API/reaper) can touch the same Redis job
+record. Safety is enforced at three layers:
+
+### 1. Per-job Redis lock (`JobStore.update_status`)
+
+Status transitions (running / completed / failed / re-queued) run under
+`_JobLock` in `app/store.py`:
+
+- Lock key: `{prefix}:lock:{job_id}`
+- Acquire: atomic `SET key token NX EX timeout` (spin until
+  `JOB_LOCK_BLOCKING_TIMEOUT_SECONDS`)
+- Release: delete only if the stored token still matches (avoids deleting
+  another holder’s lock after TTL expiry)
+- Lock TTL: `JOB_LOCK_TIMEOUT_SECONDS` so a crashed holder cannot wedge the job forever
+
+Read-modify-write of `attempts`, `status`, `result`, and `error` therefore
+cannot interleave across workers.
+
+### 2. Atomic idempotency claim
+
+`Idempotency-Key` uses `SET … NX EX` (`try_claim_idempotency`). Only one
+concurrent submit wins the key; losers return the existing job id — no
+duplicate enqueue.
+
+### 3. Celery delivery semantics
+
+- `task_acks_late=True` — ack after the task finishes (not on pull)
+- `task_reject_on_worker_lost=True` — lost worker → task can be redelivered
+- `worker_prefetch_multiplier` from env (example `1`) — limits how many
+  unacked tasks a worker hoards
+
+Together: Redis locks protect **state mutations**; Celery settings protect
+**task ownership / redelivery** under process crash.
+
 ## Why Celery (vs in-process threads)
 
 | | Threads in API | Celery |
@@ -289,3 +348,4 @@ sequenceDiagram
 - **No auth / rate limits** (intentionally out of scope)
 - **Stuck reaper fails to DLQ** (does not auto-requeue) — use `POST /jobs/{id}/replay`
 - **Eager tests ≠ full broker** — run `docker compose` (api + worker + beat) for an end-to-end check
+- **Lock is best-effort distributed** — `SET NX` + token check (no Redlock); sufficient for this single-Redis design
