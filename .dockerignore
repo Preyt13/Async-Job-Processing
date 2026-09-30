@@ -1,0 +1,12 @@
+# Exclude local/dev artifacts from App Platform / Docker builds
+.venv/
+.git/
+.tools/
+.pytest_cache/
+__pycache__/
+*.pyc
+.env
+.env.local
+*.md
+tests/
+.pytest_cache/

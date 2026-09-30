@@ -1,0 +1,157 @@
+# DigitalOcean App Platform specification
+# Docs: https://docs.digitalocean.com/products/app-platform/
+#
+# Deploy:
+#   1. Push this repo to GitHub/GitLab and set github.repo below
+#   2. doctl auth init
+#   3. doctl apps create --spec .do/app.yaml
+#   4. Later updates: doctl apps update <APP_ID> --spec .do/app.yaml
+#
+# Architecture:
+#   api (web) ──┐
+#   worker      ├──► managed Valkey (Redis protocol) — job state + Celery broker
+#   beat ───────┘
+
+name: async-job-processing
+region: nyc
+
+features:
+  - buildpack-stack=ubuntu-22
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+
+# ---------------------------------------------------------------------------
+# Shared env — injected into every component
+# ---------------------------------------------------------------------------
+envs:
+  - key: REDIS_URL
+    scope: RUN_TIME
+    value: ${jobs-redis.DATABASE_URL}
+  - key: CELERY_BROKER_URL
+    scope: RUN_TIME
+    value: ${jobs-redis.DATABASE_URL}
+  - key: REDIS_KEY_PREFIX
+    scope: RUN_TIME
+    value: "jobs"
+  - key: CELERY_QUEUE
+    scope: RUN_TIME
+    value: "jobs"
+  - key: CELERY_CONCURRENCY
+    scope: RUN_TIME
+    value: "3"
+  - key: CELERY_PREFETCH_MULTIPLIER
+    scope: RUN_TIME
+    value: "1"
+  - key: CELERY_TASK_ALWAYS_EAGER
+    scope: RUN_TIME
+    value: "false"
+  - key: MAX_RETRIES
+    scope: RUN_TIME
+    value: "3"
+  - key: BASE_BACKOFF_SECONDS
+    scope: RUN_TIME
+    value: "0.2"
+  - key: RETRY_JITTER_RATIO
+    scope: RUN_TIME
+    value: "0.25"
+  - key: MOCK_WORK_SECONDS
+    scope: RUN_TIME
+    value: "0.5"
+  - key: IDEMPOTENCY_TTL_SECONDS
+    scope: RUN_TIME
+    value: "86400"
+  - key: JOB_TTL_SECONDS
+    scope: RUN_TIME
+    value: "604800"
+  - key: STUCK_RUNNING_SECONDS
+    scope: RUN_TIME
+    value: "300"
+  - key: REAPER_INTERVAL_SECONDS
+    scope: RUN_TIME
+    value: "30"
+  - key: PURGE_INTERVAL_SECONDS
+    scope: RUN_TIME
+    value: "60"
+  - key: JOB_LOCK_TIMEOUT_SECONDS
+    scope: RUN_TIME
+    value: "5"
+  - key: JOB_LOCK_BLOCKING_TIMEOUT_SECONDS
+    scope: RUN_TIME
+    value: "5"
+  - key: DLQ_LIST_DEFAULT_LIMIT
+    scope: RUN_TIME
+    value: "100"
+  - key: LOG_LEVEL
+    scope: RUN_TIME
+    value: "INFO"
+  - key: API_HOST
+    scope: RUN_TIME
+    value: "0.0.0.0"
+  - key: API_PORT
+    scope: RUN_TIME
+    value: "8080"
+
+# ---------------------------------------------------------------------------
+# Datastore
+# ---------------------------------------------------------------------------
+databases:
+  - name: jobs-redis
+    engine: VALKEY
+    version: "8"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
+    production: false
+
+# ---------------------------------------------------------------------------
+# HTTP API
+# ---------------------------------------------------------------------------
+services:
+  - name: api
+    dockerfile_path: Dockerfile
+    source_dir: /
+    github:
+      repo: YOUR_GITHUB_ORG/async-job-processing
+      branch: main
+      deploy_on_push: true
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 20
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    run_command: ./scripts/run_api.sh
+
+# ---------------------------------------------------------------------------
+# Background workers
+# ---------------------------------------------------------------------------
+workers:
+  - name: celery-worker
+    dockerfile_path: Dockerfile
+    source_dir: /
+    github:
+      repo: YOUR_GITHUB_ORG/async-job-processing
+      branch: main
+      deploy_on_push: true
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    run_command: ./scripts/run_worker.sh
+
+  # Keep instance_count: 1 — Celery Beat must be a singleton.
+  - name: celery-beat
+    dockerfile_path: Dockerfile
+    source_dir: /
+    github:
+      repo: YOUR_GITHUB_ORG/async-job-processing
+      branch: main
+      deploy_on_push: true
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    run_command: ./scripts/run_beat.sh
