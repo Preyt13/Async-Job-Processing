@@ -31,6 +31,22 @@ Internet
 
 Spec file: [`.do/app.yaml`](../../.do/app.yaml)
 
+## CI/CD from GitHub Actions
+
+After the app exists and secrets are set, every push to `main` that passes
+tests triggers:
+
+```text
+pytest → doctl apps update --spec → doctl apps create-deployment --wait
+```
+
+Required GitHub Actions secrets:
+
+- `DIGITALOCEAN_ACCESS_TOKEN`
+- `DIGITALOCEAN_APP_ID`
+
+See root [README](../../README.md#cicd-github-actions) for details.
+
 ## Prerequisites
 
 1. DigitalOcean account + [doctl](https://docs.digitalocean.com/reference/doctl/)

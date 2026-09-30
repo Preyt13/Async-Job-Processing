@@ -25,10 +25,29 @@ Infrastructure lives under [`.do/app.yaml`](.do/app.yaml) and
 api + celery-worker + celery-beat  →  managed Valkey (Redis-compatible)
 ```
 
+### CI/CD (GitHub Actions)
+
+Workflow: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
+
+| Event | What runs |
+| --- | --- |
+| Pull request → `Main` / `main` | `pytest` only |
+| Push → `Main` / `main` | `pytest`, then deploy to App Platform if tests pass |
+
+**Repo secrets** (GitHub → Settings → Secrets and variables → Actions):
+
+| Secret | How to get it |
+| --- | --- |
+| `DIGITALOCEAN_ACCESS_TOKEN` | DO control panel → API → Generate New Token |
+| `DIGITALOCEAN_APP_ID` | `doctl apps list` after first create |
+
+One-time app create (local, before Actions can deploy):
+
 ```bash
-# 1) Set github.repo in .do/app.yaml
-# 2) Create the app
+# 1) github.repo is already Preyt13/Async-Job-Processing in .do/app.yaml
+# 2) Create the app once
 doctl apps create --spec .do/app.yaml
+# 3) Copy the app id into GitHub secret DIGITALOCEAN_APP_ID
 ```
 
 ## Quick start (Docker)
