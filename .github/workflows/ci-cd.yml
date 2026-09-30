@@ -28,6 +28,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Prepare env file
+        # App settings for pytest come from .env.example (copied below).
+        # No GitHub Secrets are required for the test job.
         run: cp .env.example .env
 
       - name: Run pytest
@@ -41,6 +43,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Check deploy secrets
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+          DROPLET_SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+        run: |
+          missing=0
+          for name in DROPLET_HOST DROPLET_USER DROPLET_SSH_KEY; do
+            eval "val=\$$name"
+            if [ -z "$val" ]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              missing=1
+            else
+              echo "OK: $name is set"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "Add these under: Repo → Settings → Secrets and variables → Actions"
+            echo "  DROPLET_HOST     = droplet public IP (e.g. 168.144.122.103)"
+            echo "  DROPLET_USER     = root"
+            echo "  DROPLET_SSH_KEY  = full private key PEM (id_ed25519), including BEGIN/END lines"
+            exit 1
+          fi
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
